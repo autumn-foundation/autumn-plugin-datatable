@@ -66,6 +66,7 @@ impl SelectAll {
 /// | `ids` | The selected row ids. |
 /// | `all` | Select-all is on. The form also sends it with JavaScript off. |
 /// | `visible` | The ids of the rows on the page. |
+/// | `all_shown` | The server rendered select-all on. |
 /// | `confirmed` | The user confirmed the action in the dialog. |
 ///
 /// The ids come from the client. Check that the user can change each row.
@@ -88,6 +89,8 @@ pub struct BulkSelection {
     all: Option<String>,
     #[serde(default)]
     visible: Vec<String>,
+    #[serde(default)]
+    all_shown: Option<String>,
     #[serde(default)]
     confirmed: Option<String>,
 }
@@ -139,13 +142,19 @@ impl BulkSelection {
 
     /// The ids to act on, one time each, in order, with no empty id.
     ///
-    /// The selected ids win. The page ids apply only when select-all is on
-    /// and no row box is on. Then a row that the user clears with
-    /// JavaScript off stays out.
+    /// With JavaScript off, a select-all box does not change the row boxes.
+    /// The `all_shown` field tells the two cases apart:
+    ///
+    /// - The user turned select-all on: the page ids.
+    /// - Select-all was on in the page: the selected ids. Then a row that
+    ///   the user clears stays out.
+    ///
+    /// With JavaScript on, the row boxes follow select-all, so both are the
+    /// same.
     #[must_use]
     pub fn ids(&self) -> Vec<&str> {
-        let picked = self.ids.iter().any(|id| !id.is_empty());
-        let source = if self.is_all() && !picked {
+        let shown = self.all_shown.as_deref().is_some_and(|v| !v.is_empty());
+        let source = if self.is_all() && !shown {
             &self.visible
         } else {
             &self.ids

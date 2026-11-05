@@ -36,8 +36,10 @@ Option 3.
   be equal. The decoder caps filters, values and columns.
 - The bulk `<form>` holds no cell. Its controls join it with the `form`
   attribute. Then a form in a cell does not nest in it.
-- An explicit `ids` list wins over `all`. Then a row that the user clears
-  with JavaScript off stays out.
+- With JavaScript off, select-all does not change the row boxes. The form
+  sends `all_shown` when the server rendered select-all on. Then `all`
+  that the user turns on acts on the page, and a row that the user clears
+  stays out.
 - The script writes `aria-checked="mixed"` and `indeterminate` together.
   The server writes neither. On a native box, `aria-checked` must agree
   with the native state.

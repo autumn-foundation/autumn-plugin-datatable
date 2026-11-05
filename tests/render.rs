@@ -518,6 +518,24 @@ fn a_form_in_a_cell_does_not_nest_in_the_bulk_form() {
 }
 
 #[test]
+fn the_form_marks_a_select_all_that_the_server_rendered_on() {
+    let rows = posts();
+    let cols = columns();
+    let actions = [BulkAction::new("archive", "Archive")];
+    let render = |selected: &[String]| {
+        DataTable::new("posts", "Posts", &rows, &cols)
+            .selectable(|p| p.id.to_string())
+            .selected(selected)
+            .bulk_actions("/posts/actions", &actions, html! {})
+            .render()
+            .into_string()
+    };
+    let all = ["1".to_owned(), "2".to_owned(), "3".to_owned()];
+    assert!(render(&all).contains(r#"<input type="hidden" name="all_shown" value="1">"#));
+    assert!(!render(&all[..1]).contains("all_shown"));
+}
+
+#[test]
 fn a_confirm_action_adds_the_dialog() {
     let html = bulk_html(&[
         BulkAction::new("archive", "Archive"),

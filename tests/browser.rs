@@ -567,10 +567,11 @@ async fn hx_boost_does_not_skip_the_confirm_dialog() {
         "htmx posted before the confirm"
     );
 
-    // Confirm: one post, with the confirmed flag.
+    // Confirm: one post, with the confirmed flag. htmx swaps the page:
+    // the window is the same, so the marker stays.
     eval::<bool>(
         &page,
-        "(document.querySelector('[data-autumn-datatable-ok]').click(), true)",
+        "(window.__stay = 1, document.querySelector('[data-autumn-datatable-ok]').click(), true)",
     )
     .await;
     assert!(
@@ -582,6 +583,10 @@ async fn hx_boost_does_not_skip_the_confirm_dialog() {
         "the boosted form did not post"
     );
     assert_eq!(BOOSTED_POSTS.load(Ordering::SeqCst), before + 1);
+    assert!(
+        eval::<bool>(&page, "window.__stay === 1").await,
+        "the form did not post through htmx"
+    );
 }
 
 #[tokio::test]

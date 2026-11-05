@@ -535,6 +535,9 @@ impl<'a, T> DataTable<'a, T> {
                     @for id in self.row_ids() {
                         input type="hidden" name="visible" value=(id);
                     }
+                    @if self.select_state().is_checked() {
+                        input type="hidden" name="all_shown" value="1";
+                    }
                 }
             }
             (self.scroll())

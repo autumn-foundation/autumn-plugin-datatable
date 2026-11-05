@@ -128,8 +128,12 @@
     form.appendChild(flag);
     confirmed = form;
     try {
-      // requestSubmit fires the submit event before it returns.
-      form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+      // Both read the form data before they return.
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+      } else {
+        form.submit();
+      }
     } finally {
       confirmed = null;
       flag.remove();
