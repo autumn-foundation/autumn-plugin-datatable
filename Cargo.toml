@@ -1,0 +1,34 @@
+[package]
+name = "autumn-datatable-plugin"
+description = "Data table v2 widget pack for autumn-web: selection, filters, column visibility, density"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/autumn-foundation/autumn-plugin-datatable"
+keywords = ["autumn", "widgets", "table", "htmx", "maud"]
+categories = ["web-programming"]
+exclude = ["tests/fixtures/axe-core/"]
+
+[dependencies]
+autumn-web = { version = "0.10", default-features = false, features = ["maud"] }
+maud = "0.27"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[features]
+# The browser half of the conformance gate. It needs Chromium.
+system-tests = ["autumn-web/system-tests", "autumn-web/htmx"]
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
