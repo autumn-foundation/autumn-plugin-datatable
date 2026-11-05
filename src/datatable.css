@@ -1,0 +1,285 @@
+/* The datatable widget pack. Public tokens only: no raw colors. */
+.autumn-datatable-root {
+    --autumn-datatable-cell-y: var(--space-3);
+    --autumn-datatable-cell-x: var(--space-4);
+    --autumn-datatable-max-height: 32rem;
+    display: grid;
+    gap: var(--space-3);
+    color: var(--text);
+    font-family: var(--font-family);
+}
+
+.autumn-datatable-root--compact {
+    --autumn-datatable-cell-y: var(--space-1);
+    --autumn-datatable-cell-x: var(--space-2);
+}
+
+/* Toolbar: filters, chips, columns and density. */
+.autumn-datatable-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+}
+
+.autumn-datatable-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+}
+
+.autumn-datatable-filter {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: var(--font-size-sm);
+}
+
+.autumn-datatable-filter legend {
+    padding: 0;
+    margin-block-end: var(--space-1);
+}
+
+.autumn-datatable-filter input[type="text"],
+.autumn-datatable-filter input[type="search"],
+.autumn-datatable-filter select {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+}
+
+.autumn-datatable-option {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-inline-end: var(--space-2);
+}
+
+.autumn-datatable-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.autumn-datatable-clear,
+.autumn-datatable-chip,
+.autumn-datatable-sort,
+.autumn-datatable-density a {
+    color: var(--primary);
+}
+
+.autumn-datatable-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.autumn-datatable-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface-muted);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+}
+
+.autumn-datatable-columns {
+    position: relative;
+    font-size: var(--font-size-sm);
+}
+
+.autumn-datatable-columns > summary {
+    cursor: pointer;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+}
+
+.autumn-datatable-columns form {
+    position: absolute;
+    z-index: var(--z-dropdown);
+    display: grid;
+    gap: var(--space-2);
+    margin-block-start: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.autumn-datatable-columns fieldset {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.autumn-datatable-density {
+    display: inline-flex;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+}
+
+.autumn-datatable-density a[aria-current="true"] {
+    color: var(--text);
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
+}
+
+/* The table. */
+.autumn-datatable-scroll {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+}
+
+.autumn-datatable-scroll:focus-visible,
+.autumn-datatable-check:focus-visible,
+.autumn-datatable-chip:focus-visible,
+.autumn-datatable-sort:focus-visible,
+.autumn-datatable-clear:focus-visible,
+.autumn-datatable-density a:focus-visible,
+.autumn-datatable-table a:focus-visible,
+.autumn-datatable-columns > summary:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.autumn-datatable-root--sticky .autumn-datatable-scroll {
+    max-height: var(--autumn-datatable-max-height);
+    /* A focused cell does not go under the sticky header (WCAG 2.4.11). */
+    scroll-padding-block-start: calc(var(--space-8) + var(--autumn-datatable-cell-y));
+}
+
+.autumn-datatable-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--font-size-sm);
+}
+
+.autumn-datatable-table caption {
+    padding: var(--space-2) var(--autumn-datatable-cell-x);
+    font-weight: var(--font-weight-semibold);
+    text-align: start;
+}
+
+.autumn-datatable-table th,
+.autumn-datatable-table td {
+    padding: var(--autumn-datatable-cell-y) var(--autumn-datatable-cell-x);
+    border-block-end: 1px solid var(--border);
+    text-align: start;
+    vertical-align: middle;
+}
+
+.autumn-datatable-table thead th {
+    background: var(--surface-muted);
+    font-weight: var(--font-weight-semibold);
+}
+
+.autumn-datatable-table th[scope="row"] {
+    font-weight: var(--font-weight-medium);
+}
+
+.autumn-datatable-root--sticky thead th {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+}
+
+.autumn-datatable-sort {
+    text-decoration: none;
+}
+
+.autumn-datatable-sort::after {
+    content: "";
+    margin-inline-start: var(--space-1);
+}
+
+/* The empty alt text keeps the arrow out of the link name. */
+[aria-sort="ascending"] > .autumn-datatable-sort::after {
+    content: "\25B2" / "";
+}
+
+[aria-sort="descending"] > .autumn-datatable-sort::after {
+    content: "\25BC" / "";
+}
+
+.autumn-datatable-select {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.autumn-datatable-table tbody tr:has(.autumn-datatable-check:checked) {
+    background: var(--primary-light);
+}
+
+/* Loading: the core busy state sets aria-busy on the root. Only the rows
+   fade, so the header keeps its contrast. */
+.autumn-datatable-root[aria-busy="true"] .autumn-datatable-table tbody,
+.autumn-datatable-table[aria-busy="true"] tbody {
+    opacity: 0.6;
+}
+
+/* Bulk bar and confirm dialog. */
+.autumn-datatable-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+}
+
+.autumn-datatable-bulk select {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+}
+
+.autumn-datatable-status {
+    margin: 0;
+    margin-inline-end: var(--space-2);
+    color: var(--text-muted);
+}
+
+.autumn-datatable-confirm {
+    max-width: 28rem;
+    padding: var(--space-5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.autumn-datatable-confirm-title {
+    margin: 0;
+    margin-block-end: var(--space-2);
+    font-size: var(--font-size-lg);
+}
+
+.autumn-datatable-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-block-start: var(--space-4);
+}
