@@ -67,7 +67,7 @@ fn a_full_query_decodes_each_part() {
     assert_eq!(state.size(), Some(50));
     assert_eq!(state.filter("status"), ["open", "closed"]);
     assert_eq!(state.filter("kind"), ["bug"]);
-    assert!(state.filter("nope").is_empty());
+    assert_eq!(state.filter("nope"), [] as [String; 0]);
     assert_eq!(
         state.columns(),
         Some(&["status".to_owned(), "author".to_owned()][..])
@@ -110,7 +110,7 @@ fn empty_values_are_absent() {
     let state = parse("q=&sort=&filter[status]=&filter[kind]=bug&filter[kind]=");
     assert_eq!(state.search(), None);
     assert_eq!(state.sort(), None);
-    assert!(state.filter("status").is_empty());
+    assert_eq!(state.filter("status"), [] as [String; 0]);
     assert_eq!(state.filter("kind"), ["bug"]);
     assert_eq!(state.filters().len(), 1);
 }
@@ -267,7 +267,7 @@ fn checked_drops_what_the_table_does_not_declare() {
     .checked(&columns(), &filters());
     assert_eq!(state.sort(), None);
     assert_eq!(state.filter("status"), ["open"]);
-    assert!(state.filter("secret").is_empty());
+    assert_eq!(state.filter("secret"), [] as [String; 0]);
     // A select filter takes one value: the first valid one.
     assert_eq!(state.filter("kind"), ["idea"]);
     // `id` is not hideable, so it is not a choice.

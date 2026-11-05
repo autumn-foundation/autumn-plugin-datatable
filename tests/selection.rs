@@ -77,7 +77,7 @@ fn an_empty_body_selects_nothing() {
     let bulk = BulkSelection::from_form(b"").expect("decodes");
     assert!(bulk.is_empty());
     assert_eq!(bulk.action(), "");
-    assert!(bulk.ids().is_empty());
+    assert_eq!(bulk.ids(), [] as [&str; 0]);
 }
 
 #[test]
