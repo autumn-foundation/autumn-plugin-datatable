@@ -64,8 +64,9 @@ impl SelectAll {
 /// |---|---|
 /// | `action` | The action name. |
 /// | `ids` | The selected row ids. |
-/// | `all` | Select-all is on (sent without JavaScript too). |
+/// | `all` | Select-all is on. The form also sends it with JavaScript off. |
 /// | `visible` | The ids of the rows on the page. |
+/// | `confirmed` | The user confirmed the action in the dialog. |
 ///
 /// The ids come from the client. Check that the user can change each row.
 ///
@@ -87,6 +88,8 @@ pub struct BulkSelection {
     all: Option<String>,
     #[serde(default)]
     visible: Vec<String>,
+    #[serde(default)]
+    confirmed: Option<String>,
 }
 
 impl BulkSelection {
@@ -112,18 +115,37 @@ impl BulkSelection {
         actions.iter().find(|a| a.name() == self.action)
     }
 
+    /// `true` when the user confirmed the action in the dialog.
+    #[must_use]
+    pub fn is_confirmed(&self) -> bool {
+        self.confirmed.as_deref().is_some_and(|v| !v.is_empty())
+    }
+
+    /// `true` when the action asks for a confirm step and the user did not
+    /// confirm. With JavaScript off, the form posts with no dialog. Then
+    /// show a confirm page that posts the same body with `confirmed=1`.
+    #[must_use]
+    pub fn needs_confirm(&self, actions: &[BulkAction<'_>]) -> bool {
+        self.action_in(actions)
+            .is_some_and(|a| a.confirm_text().is_some())
+            && !self.is_confirmed()
+    }
+
     /// `true` when select-all is on.
     #[must_use]
     pub fn is_all(&self) -> bool {
         self.all.as_deref().is_some_and(|v| !v.is_empty())
     }
 
-    /// The ids to act on: the page ids when select-all is on, else the
-    /// selected ids. Each id is kept one time, in order. Empty ids are
-    /// dropped.
+    /// The ids to act on, one time each, in order, with no empty id.
+    ///
+    /// The selected ids win. The page ids apply only when select-all is on
+    /// and no row box is on. Then a row that the user clears with
+    /// JavaScript off stays out.
     #[must_use]
     pub fn ids(&self) -> Vec<&str> {
-        let source = if self.is_all() {
+        let picked = self.ids.iter().any(|id| !id.is_empty());
+        let source = if self.is_all() && !picked {
             &self.visible
         } else {
             &self.ids

@@ -4,7 +4,7 @@
 //! JavaScript off. The pack adds to the core `data_table`:
 //!
 //! - a selection column with a select-all box (`aria-checked="mixed"`)
-//!   and a bulk action form,
+//!   and a bulk action form with a confirm dialog,
 //! - a filter bar (`filter[<key>]`, many values) with removable chips,
 //! - column visibility, density and a sticky header,
 //! - empty and loading states.
@@ -54,6 +54,7 @@
 //!     .search("Search posts")
 //!     .filters(&filters)
 //!     .selectable(|p| p.id.to_string())
+//!     // Put the CSRF input here.
 //!     .bulk_actions("/posts/actions", &actions, maud::html! {})
 //!     .render()
 //! # }
@@ -70,8 +71,9 @@ use autumn_web::plugin::Plugin;
 use autumn_web::widget_pack::WidgetPack;
 
 pub use autumn_web::pagination::SortDir;
+pub use autumn_web::widgets::HeadingLevel;
 pub use selection::{BulkSelection, SelectAll};
-pub use state::{Density, MAX_TEXT_LEN, TableState};
+pub use state::{Density, MAX_COLUMNS, MAX_FILTER_VALUES, MAX_FILTERS, MAX_TEXT_LEN, TableState};
 pub use table::{BulkAction, Column, DataTable, Filter, FilterKind};
 
 /// The pack CSS and JS.

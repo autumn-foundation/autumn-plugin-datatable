@@ -9,31 +9,31 @@
 
   var ROOT = '[data-autumn-datatable]';
 
-  function rowBoxes(root) {
-    return Array.prototype.filter.call(
-      root.querySelectorAll('[data-autumn-datatable-row]'),
-      function (box) { return !box.disabled && box.closest(ROOT) === root; }
-    );
+  function own(root, selector) {
+    return Array.prototype.filter.call(root.querySelectorAll(selector), function (el) {
+      return el.closest(ROOT) === root;
+    });
   }
 
-  function allBox(root) {
-    var box = root.querySelector('[data-autumn-datatable-all]');
-    return box && box.closest(ROOT) === root ? box : null;
+  function rowBoxes(root) {
+    return own(root, '[data-autumn-datatable-row]').filter(function (box) { return !box.disabled; });
   }
 
   function setStatus(root, text) {
-    var status = root.querySelector('[data-autumn-datatable-status]');
-    if (status) status.textContent = text;
+    var status = own(root, '[data-autumn-datatable-status]')[0];
+    // A live region reads each change. Write only a new text.
+    if (status && status.textContent !== text) status.textContent = text;
   }
 
   // Read the row boxes. Write the select-all state and the count.
   function sync(root) {
     var boxes = rowBoxes(root);
     var count = boxes.filter(function (box) { return box.checked; }).length;
-    var all = allBox(root);
+    var all = own(root, '[data-autumn-datatable-all]')[0];
     if (all) {
       var mixed = count > 0 && count < boxes.length;
       all.checked = boxes.length > 0 && count === boxes.length;
+      // The native state and aria-checked change together.
       all.indeterminate = mixed;
       if (mixed) all.setAttribute('aria-checked', 'mixed');
       else all.removeAttribute('aria-checked');
@@ -44,16 +44,20 @@
 
   var ready = new WeakSet();
   function setUp(root) {
-    if (ready.has(root)) return;
-    ready.add(root);
+    if (!ready.has(root)) {
+      ready.add(root);
+      root.setAttribute('data-autumn-datatable-ready', 'true');
+    }
     sync(root);
-    root.setAttribute('data-autumn-datatable-ready', 'true');
   }
 
+  // The target can be a root, hold roots, or be inside a root (a swap of
+  // the rows only).
   document.addEventListener('autumn:init', function (e) {
     var target = e.target;
     if (!target || !target.querySelectorAll) return;
-    if (target.matches && target.matches(ROOT)) setUp(target);
+    var outer = target.closest && target.closest(ROOT);
+    if (outer) setUp(outer);
     target.querySelectorAll(ROOT).forEach(setUp);
   });
 
@@ -70,34 +74,38 @@
     }
   });
 
-  // A confirmed submit runs one time without the dialog.
-  var confirmed = new WeakSet();
+  function stop(e) {
+    e.preventDefault();
+    // htmx (hx-boost) listens on the form. Stop it too.
+    e.stopImmediatePropagation();
+  }
 
+  // The form of the confirmed submit. It is set only during requestSubmit.
+  var confirmed = null;
+  var returnFocus = new WeakMap();
+
+  // Capture: this runs before a listener on the form, for example htmx.
   document.addEventListener('submit', function (e) {
     var form = e.target;
     if (!form || !form.matches || !form.matches('[data-autumn-datatable-form]')) return;
     var root = form.closest(ROOT);
-    if (!root) return;
-    if (confirmed.has(form)) {
-      confirmed.delete(form);
-      return;
-    }
-    if (sync(root) === 0 && !(allBox(root) || {}).checked) {
-      e.preventDefault();
+    if (!root || confirmed === form) return;
+    if (sync(root) === 0) {
+      stop(e);
       setStatus(root, form.getAttribute('data-autumn-datatable-none') || '');
       return;
     }
-    var select = form.querySelector('select[name="action"]');
+    var select = own(root, 'select[name="action"]')[0];
     var option = select && select.options[select.selectedIndex];
     var text = option && option.getAttribute('data-autumn-datatable-confirm');
     var dialog = document.getElementById(root.id + '-confirm');
     if (!text || !dialog || typeof dialog.showModal !== 'function') return;
-    e.preventDefault();
+    stop(e);
     var message = dialog.querySelector('[data-autumn-datatable-confirm-text]');
     if (message) message.textContent = text;
-    dialog.returnFocus = e.submitter || document.activeElement;
+    returnFocus.set(dialog, e.submitter || document.activeElement);
     dialog.showModal();
-  });
+  }, true);
 
   document.addEventListener('click', function (e) {
     var button = e.target && e.target.closest
@@ -105,26 +113,36 @@
     if (!button) return;
     var dialog = button.closest('dialog');
     var root = dialog && dialog.closest(ROOT);
-    var form = root && root.querySelector('[data-autumn-datatable-form]');
+    var form = root && own(root, '[data-autumn-datatable-form]')[0];
     if (!dialog || !form) return;
     var ok = button.matches('[data-autumn-datatable-ok]');
-    var submitter = dialog.returnFocus;
+    var submitter = returnFocus.get(dialog);
     dialog.close();
     if (!ok) return;
-    confirmed.add(form);
-    if (typeof form.requestSubmit === 'function') {
+    // The server reads `confirmed=1`. Without it, a confirm action asks
+    // again on the server.
+    var flag = document.createElement('input');
+    flag.type = 'hidden';
+    flag.name = 'confirmed';
+    flag.value = '1';
+    form.appendChild(flag);
+    confirmed = form;
+    try {
+      // requestSubmit fires the submit event before it returns.
       form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
-    } else {
-      form.submit();
+    } finally {
+      confirmed = null;
+      flag.remove();
     }
   });
 
   // Escape or Cancel: give focus back to the submit button.
+  // `close` does not bubble, so listen in the capture phase.
   document.addEventListener('close', function (e) {
     var dialog = e.target;
     if (!dialog || !dialog.matches || !dialog.matches('dialog.autumn-datatable-confirm')) return;
-    var back = dialog.returnFocus;
-    dialog.returnFocus = null;
+    var back = returnFocus.get(dialog);
+    returnFocus.delete(dialog);
     if (back && back.isConnected && typeof back.focus === 'function') back.focus();
   }, true);
 })();

@@ -13,8 +13,8 @@ stays the light, sort-only table.
 ## Brainstorm
 
 - `TableState`: the table state in the query string. `q`, `sort`, `dir`,
-  `page`, `per_page`, `filter[<key>]` (many values), `cols`, `density`.
-- `TableState` decodes with `Query<T>` and with `from_query_str`. It
+  `page`, `size`, `filter[<key>]` (many values), `cols`, `density`.
+- `TableState` decodes with `Query<T>` and with `TableState::from_query`. It
   encodes back to the same query string.
 - Links change one part of the state. A sort or a filter change goes back
   to page 1.
@@ -32,7 +32,6 @@ stays the light, sort-only table.
   shows "No rows match" and a link that clears the filters.
 - Loading state: skeleton rows with `aria-busy="true"`. The root has
   `data-autumn-busy`, so an htmx request sets `aria-busy`.
-- An admin parity story: the same markup contract as the admin list page.
 
 ## Reverse brainstorm (how can it fail?)
 
@@ -42,7 +41,7 @@ stays the light, sort-only table.
 | A filter change keeps page 7 of 2. | A sort, filter, search or size change resets the page. |
 | A filter value injects markup or a URL part. | maud escapes values. The encoder percent-encodes. Test with `"><script>`. |
 | The app puts an unknown `sort` into SQL. | `TableState::checked` drops unknown sort, filter and column keys. |
-| `per_page=1000000` loads all rows. | `checked` clamps `per_page` to a maximum. |
+| `size=1000000` loads all rows. | `checked` clamps `size` to a maximum. |
 | The user hides all columns. | The table shows the default columns. |
 | A form with all boxes clear sends no `cols`. | The form sends `cols=` as a marker. |
 | The select-all state is wrong after an htmx swap. | The script sets up on `autumn:init` and reads the DOM. |

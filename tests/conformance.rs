@@ -55,3 +55,8 @@ fn the_pack_links_its_css_and_js() {
 fn the_plugin_has_a_name() {
     assert_eq!(DatatablePlugin.name(), "autumn-datatable-plugin");
 }
+
+#[test]
+fn the_plugin_installs_on_an_app() {
+    let _app = autumn_web::app().plugin(DatatablePlugin);
+}

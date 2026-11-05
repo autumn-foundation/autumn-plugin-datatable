@@ -5,22 +5,16 @@ use std::collections::BTreeSet;
 
 use autumn_web::form::FieldOptions;
 use autumn_web::widget_pack::element;
-use autumn_web::widgets::{SkeletonShape, empty_state, skeleton};
+use autumn_web::widgets::{
+    EmptyStateConfig, HeadingLevel, SkeletonShape, empty_state_with, skeleton,
+};
 use maud::{Markup, Render, html};
 
 use crate::selection::SelectAll;
-use crate::state::{Density, TableState};
+use crate::state::{Density, TableState, is_key};
 
 /// The message when a bulk submit has no selected row.
 const NONE_SELECTED: &str = "Select at least one row.";
-
-/// `true` for `[a-z0-9_-]+`.
-fn is_key(key: &str) -> bool {
-    !key.is_empty()
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
-}
 
 /// `true` for `[a-z][a-z0-9-]*`.
 fn is_table_id(id: &str) -> bool {
@@ -59,13 +53,13 @@ impl<'a, T> Column<'a, T> {
     ///
     /// # Panics
     ///
-    /// Panics when `key` is not `[a-z0-9_-]+`. The key goes into `cols=`
+    /// Panics when `key` is not `[a-z0-9_]+`. The key goes into `cols=`
     /// and into ids.
     #[must_use]
     pub fn new(key: &'a str, header: &'a str, cell: impl Fn(&T) -> Markup + 'a) -> Self {
         assert!(
             is_key(key),
-            "column key {key:?} is not valid: use [a-z0-9_-]+"
+            "column key {key:?} is not valid: use [a-z0-9_]+"
         );
         Self {
             key,
@@ -161,13 +155,15 @@ pub struct Filter<'a> {
 }
 
 impl<'a> Filter<'a> {
+    /// A filter of one kind.
+    ///
     /// # Panics
     ///
-    /// Panics when `key` is not `[a-z0-9_-]+`.
+    /// Panics when `key` is not `[a-z0-9_]+`.
     fn new(key: &'a str, label: &'a str, kind: FilterKind<'a>) -> Self {
         assert!(
             is_key(key),
-            "filter key {key:?} is not valid: use [a-z0-9_-]+"
+            "filter key {key:?} is not valid: use [a-z0-9_]+"
         );
         Self { key, label, kind }
     }
@@ -176,7 +172,7 @@ impl<'a> Filter<'a> {
     ///
     /// # Panics
     ///
-    /// Panics when `key` is not `[a-z0-9_-]+`.
+    /// Panics when `key` is not `[a-z0-9_]+`.
     #[must_use]
     pub fn text(key: &'a str, label: &'a str) -> Self {
         Self::new(key, label, FilterKind::Text)
@@ -186,7 +182,7 @@ impl<'a> Filter<'a> {
     ///
     /// # Panics
     ///
-    /// Panics when `key` is not `[a-z0-9_-]+`.
+    /// Panics when `key` is not `[a-z0-9_]+`.
     #[must_use]
     pub fn select(key: &'a str, label: &'a str, options: &'a [(&'a str, &'a str)]) -> Self {
         Self::new(key, label, FilterKind::Select(options))
@@ -196,7 +192,7 @@ impl<'a> Filter<'a> {
     ///
     /// # Panics
     ///
-    /// Panics when `key` is not `[a-z0-9_-]+`.
+    /// Panics when `key` is not `[a-z0-9_]+`.
     #[must_use]
     pub fn multi(key: &'a str, label: &'a str, options: &'a [(&'a str, &'a str)]) -> Self {
         Self::new(key, label, FilterKind::Multi(options))
@@ -257,8 +253,10 @@ impl<'a> BulkAction<'a> {
         }
     }
 
-    /// Ask the user with `text` before the form posts. Without JavaScript
-    /// the form posts at once: also check on the server.
+    /// Ask the user with `text` before the form posts. With JavaScript off,
+    /// the form posts with no dialog. Use
+    /// [`BulkSelection::needs_confirm`](crate::BulkSelection::needs_confirm)
+    /// on the server to ask then.
     #[must_use]
     pub const fn confirm(mut self, text: &'a str) -> Self {
         self.confirm = Some(text);
@@ -340,6 +338,7 @@ pub struct DataTable<'a, T> {
     selected: &'a [String],
     bulk: Option<Bulk<'a>>,
     empty: Option<Empty<'a>>,
+    empty_level: HeadingLevel,
     loading: Option<usize>,
     options: Option<&'a FieldOptions<'a>>,
 }
@@ -374,12 +373,14 @@ impl<'a, T> DataTable<'a, T> {
             selected: &[],
             bulk: None,
             empty: None,
+            empty_level: HeadingLevel::H2,
             loading: None,
             options: None,
         }
     }
 
-    /// The current state. Give the [`TableState::checked`] state.
+    /// The current state. Use the state that [`TableState::checked`]
+    /// returns.
     #[must_use]
     pub fn state(mut self, state: &'a TableState) -> Self {
         self.state = Cow::Borrowed(state);
@@ -443,8 +444,11 @@ impl<'a, T> DataTable<'a, T> {
         self
     }
 
-    /// Put the table in a POST form to `action`, with a bulk action bar.
-    /// `fields` goes in the form, for example the CSRF input.
+    /// Add a bulk action bar and a POST form to `action`.
+    ///
+    /// `fields` goes in the form. Put the CSRF input there. The form does
+    /// not hold the table: the boxes and the bar join it with the `form`
+    /// attribute. Then a form in a cell does not nest.
     #[must_use]
     pub fn bulk_actions(
         mut self,
@@ -473,6 +477,14 @@ impl<'a, T> DataTable<'a, T> {
         self
     }
 
+    /// The heading level of the empty state title. The default is `<h2>`.
+    /// Use one level below the heading above the table.
+    #[must_use]
+    pub const fn empty_level(mut self, level: HeadingLevel) -> Self {
+        self.empty_level = level;
+        self
+    }
+
     /// Show `rows` skeleton rows and `aria-busy="true"` in place of the
     /// rows. Use it for a table that loads later.
     #[must_use]
@@ -482,7 +494,8 @@ impl<'a, T> DataTable<'a, T> {
     }
 
     /// The app passthrough on the root: `data-*` and `hx-*`, for example
-    /// `hx-boost`.
+    /// `hx-boost`. With `.hx("indicator", "this")`, an htmx request from
+    /// the table sets `aria-busy` on the root.
     #[must_use]
     pub const fn options(mut self, options: &'a FieldOptions<'a>) -> Self {
         self.options = Some(options);
@@ -505,25 +518,29 @@ impl<'a, T> DataTable<'a, T> {
             ("data-autumn-datatable", ""),
             ("data-autumn-busy", ""),
         ];
+        debug_assert!(
+            unique(self.columns.iter().map(|c| c.key))
+                && unique(self.filters.iter().map(|f| f.key)),
+            "table {:?}: two columns or two filters have the same key",
+            self.id
+        );
         let none = FieldOptions::new();
         let body = html! {
             (self.toolbar())
             @if let Some(bulk) = &self.bulk {
+                // The form holds no table cell. The controls join it with `form=`.
                 form id={ (self.id) "-bulk" } method="post" action=(bulk.action)
                     data-autumn-datatable-form data-autumn-datatable-none=(NONE_SELECTED) {
                     (bulk.fields)
                     @for id in self.row_ids() {
                         input type="hidden" name="visible" value=(id);
                     }
-                    (self.scroll())
-                    (self.bar())
                 }
-                @if bulk.actions.iter().any(|a| a.confirm.is_some()) {
-                    (self.dialog())
-                }
-            } @else {
-                (self.scroll())
-                (self.bar())
+            }
+            (self.scroll())
+            (self.bar())
+            @if self.bulk.as_ref().is_some_and(|b| b.actions.iter().any(|a| a.confirm.is_some())) {
+                (self.dialog())
             }
         };
         element("div", &attrs, self.options.unwrap_or(&none), body)
@@ -533,6 +550,11 @@ impl<'a, T> DataTable<'a, T> {
 
     fn href(&self, state: &TableState) -> String {
         state.href(self.base_path)
+    }
+
+    /// The id of the bulk form, when the table has one.
+    fn form_id(&self) -> Option<String> {
+        self.bulk.as_ref().map(|_| format!("{}-bulk", self.id))
     }
 
     fn row_ids(&self) -> Vec<String> {
@@ -611,11 +633,15 @@ impl<'a, T> DataTable<'a, T> {
                 @for filter in self.filters {
                     (self.filter_control(filter))
                 }
-                // A filter change goes back to page 1: no `page` input.
-                (self.hidden(|name| matches!(name, "sort" | "dir" | "cols" | "density" | "size")))
+                // A filter change goes back to page 1: no `page` input. With
+                // no search box, `q` goes along as a hidden input.
+                (self.hidden(|name| {
+                    matches!(name, "sort" | "dir" | "cols" | "density" | "size")
+                        || (name == "q" && self.search.is_none())
+                }))
                 div class="autumn-datatable-filter-actions" {
                     button type="submit" class="autumn-button autumn-button--secondary autumn-button--sm" {
-                        "Apply"
+                        "Apply filters"
                     }
                     @if self.state.has_filters() {
                         a class="autumn-datatable-clear" href=(self.href(&self.state.cleared())) {
@@ -671,7 +697,7 @@ impl<'a, T> DataTable<'a, T> {
         if let Some(q) = self.state.search() {
             chips.push((
                 format!("Search: {q}"),
-                format!("Remove search {q}"),
+                format!("Search: {q}, remove"),
                 self.href(&self.state.with_search("")),
             ));
         }
@@ -680,7 +706,7 @@ impl<'a, T> DataTable<'a, T> {
                 let text = format!("{}: {}", filter.label, filter.value_label(value));
                 chips.push((
                     text.clone(),
-                    format!("Remove filter {text}"),
+                    format!("{text}, remove"),
                     self.href(&self.state.without_filter_value(filter.key, value)),
                 ));
             }
@@ -711,7 +737,7 @@ impl<'a, T> DataTable<'a, T> {
                 form method="get" action=[action] {
                     fieldset {
                         legend { "Visible columns" }
-                        // The marker: no box on still gives `cols`.
+                        // This input sends `cols` when the user clears each box.
                         input type="hidden" name="cols" value="";
                         @for column in self.columns.iter().filter(|c| c.hideable) {
                             @let box_id = format!("{}-cols-{}", self.id, column.key);
@@ -724,7 +750,7 @@ impl<'a, T> DataTable<'a, T> {
                     }
                     (self.hidden(|name| name != "cols"))
                     button type="submit" class="autumn-button autumn-button--secondary autumn-button--sm" {
-                        "Apply"
+                        "Show columns"
                     }
                 }
             }
@@ -799,13 +825,16 @@ impl<'a, T> DataTable<'a, T> {
         SelectAll::for_page(&self.row_ids(), self.selected)
     }
 
+    /// The select-all box. The script sets `indeterminate` and
+    /// `aria-checked="mixed"` together. The server does not write
+    /// `aria-checked`: on a box that is not indeterminate it disagrees with
+    /// the native state.
     fn select_all(&self) -> Markup {
         let state = self.select_state();
-        let mixed = (state == SelectAll::Mixed).then_some("mixed");
         let disabled = self.row_ids().is_empty();
         html! {
             input type="checkbox" class="autumn-datatable-check" id={ (self.id) "-all" } name="all" value="1"
-                aria-label="Select all rows" checked[state.is_checked()] aria-checked=[mixed]
+                form=[self.form_id()] aria-label="Select all rows" checked[state.is_checked()]
                 disabled[disabled] data-autumn-datatable-all;
         }
     }
@@ -839,8 +868,8 @@ impl<'a, T> DataTable<'a, T> {
                 @let name = self.row_label.as_ref().map_or_else(|| format!("row {id}"), |label| label(row));
                 td class="autumn-datatable-select" {
                     input type="checkbox" class="autumn-datatable-check" name="ids" value=(id)
-                        aria-label={ "Select " (name) } checked[self.selected.contains(&id)]
-                        data-autumn-datatable-row;
+                        form=[self.form_id()] aria-label={ "Select " (name) }
+                        checked[self.selected.contains(&id)] data-autumn-datatable-row;
                 }
             }
             @for column in columns {
@@ -854,17 +883,19 @@ impl<'a, T> DataTable<'a, T> {
     }
 
     fn empty_state(&self) -> Markup {
+        let config = EmptyStateConfig::new().level(self.empty_level);
         if self.state.has_filters() {
             let clear = html! { a href=(self.href(&self.state.cleared())) { "Clear filters" } };
-            return empty_state(
+            return empty_state_with(
                 "No rows match",
                 "Change or clear the filters.",
                 Some(&clear),
+                &config,
             );
         }
         self.empty.as_ref().map_or_else(
-            || empty_state("No rows", "", None),
-            |empty| empty_state(empty.title, empty.body, empty.action.as_ref()),
+            || empty_state_with("No rows", "", None, &config),
+            |empty| empty_state_with(empty.title, empty.body, empty.action.as_ref(), &config),
         )
     }
 
@@ -883,15 +914,16 @@ impl<'a, T> DataTable<'a, T> {
                 @if let Some(bulk) = &self.bulk {
                     @if !bulk.actions.is_empty() {
                         label for={ (self.id) "-action" } { "With selected" }
-                        select id={ (self.id) "-action" } name="action" {
+                        select id={ (self.id) "-action" } name="action" form=[self.form_id()] {
                             @for action in bulk.actions {
                                 option value=(action.name) data-autumn-datatable-confirm=[action.confirm] {
                                     (action.label)
                                 }
                             }
                         }
-                        button type="submit" class="autumn-button autumn-button--secondary autumn-button--sm" {
-                            "Apply"
+                        button type="submit" class="autumn-button autumn-button--secondary autumn-button--sm"
+                            form=[self.form_id()] {
+                            "Apply action"
                         }
                     }
                 }
@@ -903,9 +935,9 @@ impl<'a, T> DataTable<'a, T> {
         let id = self.id;
         html! {
             dialog id={ (id) "-confirm" } class="autumn-datatable-confirm"
-                aria-labelledby={ (id) "-confirm-title" } {
+                aria-labelledby={ (id) "-confirm-title" } aria-describedby={ (id) "-confirm-text" } {
                 h2 id={ (id) "-confirm-title" } class="autumn-datatable-confirm-title" { "Confirm the action" }
-                p data-autumn-datatable-confirm-text {}
+                p id={ (id) "-confirm-text" } data-autumn-datatable-confirm-text {}
                 div class="autumn-datatable-confirm-actions" {
                     button type="button" class="autumn-button autumn-button--secondary"
                         data-autumn-datatable-cancel { "Cancel" }
@@ -915,6 +947,12 @@ impl<'a, T> DataTable<'a, T> {
             }
         }
     }
+}
+
+/// `true` when no key occurs two times.
+fn unique<'k>(keys: impl Iterator<Item = &'k str>) -> bool {
+    let mut seen = BTreeSet::new();
+    keys.into_iter().all(|key| seen.insert(key))
 }
 
 impl<T> Render for DataTable<'_, T> {

@@ -149,6 +149,64 @@ fn the_state_decodes_through_the_autumn_query_decoder() {
 fn the_default_state_encodes_to_nothing() {
     assert_eq!(TableState::new().to_query(), "");
     assert_eq!(TableState::new().href("/posts"), "/posts");
+    // An empty `href` keeps the current query. `?` clears it.
+    assert_eq!(TableState::new().href(""), "?");
+    assert_eq!(parse("page=2").href(""), "?page=2");
+}
+
+#[test]
+fn default_is_new() {
+    assert_eq!(TableState::default(), TableState::new());
+    assert_eq!(TableState::default().page(), 1);
+    assert_eq!(
+        parse(&TableState::default().to_query()),
+        TableState::default()
+    );
+}
+
+#[test]
+fn a_key_that_cannot_round_trip_is_dropped() {
+    for key in ["a]b", "a[b", "", "A", "a-b", "a b"] {
+        assert!(
+            TableState::new()
+                .with_filter(key, ["v"])
+                .filters()
+                .is_empty(),
+            "{key:?}"
+        );
+        assert_eq!(
+            TableState::new().with_columns([key]).columns(),
+            Some(&[][..]),
+            "{key:?}"
+        );
+    }
+    assert_eq!(
+        parse("cols=Bad&cols=ok").columns(),
+        Some(&["ok".to_owned()][..])
+    );
+}
+
+#[test]
+fn the_decoder_caps_filters_values_and_columns() {
+    use autumn_datatable_plugin::{MAX_COLUMNS, MAX_FILTER_VALUES, MAX_FILTERS};
+    let many_keys: String = (0..500)
+        .map(|i| format!("filter[k{i}]=1"))
+        .collect::<Vec<_>>()
+        .join("&");
+    assert_eq!(parse(&many_keys).filters().len(), MAX_FILTERS);
+    let many_values: String = (0..500)
+        .map(|i| format!("filter[k]=v{i}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    assert_eq!(parse(&many_values).filter("k").len(), MAX_FILTER_VALUES);
+    let many_cols: String = (0..500)
+        .map(|i| format!("cols=c{i}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    assert_eq!(
+        parse(&many_cols).columns().map(<[String]>::len),
+        Some(MAX_COLUMNS)
+    );
 }
 
 #[test]
@@ -315,11 +373,22 @@ fn the_state_gives_a_page_request() {
 
 #[test]
 fn the_state_gives_a_list_query() {
-    let query = parse("sort=title&dir=desc&filter[status]=open&filter[status]=closed").list_query();
+    let query = parse("sort=title&dir=desc&filter[kind]=bug").list_query();
     assert_eq!(query.sort(), Some("title"));
     assert_eq!(query.direction(), SortDir::Desc);
     let pairs: Vec<(&str, &str)> = query.filters().collect();
-    assert_eq!(pairs, [("status", "open"), ("status", "closed")]);
+    assert_eq!(pairs, [("kind", "bug")]);
+}
+
+#[test]
+fn a_multi_value_filter_is_not_in_the_list_query() {
+    // The repository joins list filters with AND: two values of one
+    // column match no row.
+    let state = parse("filter[status]=open&filter[status]=closed&filter[kind]=bug");
+    let query = state.list_query();
+    let pairs: Vec<(&str, &str)> = query.filters().collect();
+    assert_eq!(pairs, [("kind", "bug")]);
+    assert_eq!(state.filter("status"), ["open", "closed"]);
 }
 
 // ── Round trip ──────────────────────────────────────────────────────────
@@ -330,7 +399,7 @@ fn text() -> impl Strategy<Value = String> {
 }
 
 fn key() -> impl Strategy<Value = String> {
-    proptest::string::string_regex("[a-z][a-z0-9_]{0,8}").expect("regex")
+    proptest::string::string_regex("[a-z0-9_]{1,9}").expect("regex")
 }
 
 prop_compose! {
@@ -379,9 +448,15 @@ proptest! {
     fn each_link_round_trips(state in any_state(), key in key(), value in text()) {
         for next in [
             state.sorted_by(&key),
+            state.with_sort(&key, SortDir::Desc),
+            state.with_search(&value),
             state.with_filter_value(&key, &value),
             state.without_filter_value(&key, &value),
+            state.without_filter(&key),
             state.cleared(),
+            state.with_size(7),
+            state.with_page(3),
+            state.with_columns([key.as_str()]),
             state.with_density(Density::Comfortable),
             state.default_columns(),
         ] {

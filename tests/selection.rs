@@ -67,6 +67,38 @@ fn select_all_without_javascript_gives_the_page_ids() {
 }
 
 #[test]
+fn a_row_cleared_without_javascript_stays_out() {
+    // The server rendered each row on. The user cleared row 2 with
+    // JavaScript off, so select-all is still on.
+    let bulk =
+        BulkSelection::from_form(b"action=delete&all=1&ids=1&ids=3&visible=1&visible=2&visible=3")
+            .expect("decodes");
+    assert!(bulk.is_all());
+    assert_eq!(bulk.ids(), ["1", "3"]);
+}
+
+#[test]
+fn a_confirm_action_needs_the_confirmed_flag() {
+    let actions = [
+        BulkAction::new("archive", "Archive"),
+        BulkAction::new("delete", "Delete").confirm("Delete?"),
+    ];
+    let bulk = BulkSelection::from_form(b"action=delete&ids=1").expect("decodes");
+    assert!(!bulk.is_confirmed());
+    assert!(bulk.needs_confirm(&actions));
+    let bulk = BulkSelection::from_form(b"action=delete&ids=1&confirmed=1").expect("decodes");
+    assert!(bulk.is_confirmed());
+    assert!(!bulk.needs_confirm(&actions));
+    let bulk = BulkSelection::from_form(b"action=archive&ids=1").expect("decodes");
+    assert!(!bulk.needs_confirm(&actions));
+    let bulk = BulkSelection::from_form(b"action=nope&ids=1").expect("decodes");
+    assert!(
+        !bulk.needs_confirm(&actions),
+        "an unknown action does not run at all"
+    );
+}
+
+#[test]
 fn ids_are_unique_and_not_empty() {
     let bulk = BulkSelection::from_form(b"action=x&ids=2&ids=&ids=2&ids=1").expect("decodes");
     assert_eq!(bulk.ids(), ["2", "1"]);

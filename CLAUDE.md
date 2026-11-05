@@ -14,7 +14,9 @@ widget contract in autumn `docs/guide/widget-packs.md` and ADR 0030.
   `decode(encode(s)) == s`. The proptests in `tests/state.rs` check it.
 - **Safe default.** `TableState::checked` drops what the table does not
   declare. Do not remove a check. Add an explicit opt-in for an unsafe path.
-- **Each id starts with the table id.**
+- **Each id starts with the table id.** Keys are `[a-z0-9_]+`, and ids
+  join their parts with `-`.
+- **The bulk form holds no cell.** Controls join it with `form=`.
 - **Comments stand alone.** No review rounds or findings labels.
   Write in ASD-STE100: short sentences, active voice.
 

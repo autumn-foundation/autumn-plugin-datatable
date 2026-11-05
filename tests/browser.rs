@@ -15,9 +15,13 @@
 )]
 #![cfg(feature = "system-tests")]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use autumn_datatable_plugin::{ASSETS, BulkAction, BulkSelection, Column, DataTable, pack};
+use autumn_datatable_plugin::{
+    ASSETS, BulkAction, BulkSelection, Column, DataTable, TableState, pack,
+};
+use autumn_web::form::FieldOptions;
 use autumn_web::plugin_conformance::widgets::browser::run_widget_browser_conformance;
 use autumn_web::plugin_conformance::widgets::run_widget_conformance;
 use autumn_web::prelude::*;
@@ -58,6 +62,32 @@ fn table(selected: &[String]) -> Markup {
         .render()
 }
 
+/// The table with `hx-boost`, `hx-indicator="this"` and a sticky header.
+fn boosted_table(state: &TableState) -> Markup {
+    let columns = vec![
+        Column::new("name", "Name", |r: &Row| html! { (r.name) })
+            .sortable()
+            .row_header(),
+        Column::new("id", "ID", |r: &Row| html! { (r.id) }),
+    ];
+    let actions = [
+        BulkAction::new("archive", "Archive"),
+        BulkAction::new("delete", "Delete").confirm("Delete the selected people?"),
+    ];
+    let options = FieldOptions::new()
+        .hx("boost", "true")
+        .hx("indicator", "this");
+    DataTable::new("people", "People", &ROWS, &columns)
+        .state(state)
+        .base_path("/people/boosted")
+        .sticky_header()
+        .options(&options)
+        .selectable(|r| r.id.to_string())
+        .row_label(|r| r.name.to_owned())
+        .bulk_actions("/people/boosted/actions", &actions, html! {})
+        .render()
+}
+
 fn layout(body: &Markup) -> Markup {
     html! {
         (DOCTYPE)
@@ -92,11 +122,40 @@ async fn people_fragment() -> Markup {
     table(&["2".to_owned()])
 }
 
+fn result(body: &str) -> Markup {
+    let bulk = BulkSelection::from_form(body.as_bytes()).expect("bulk body");
+    let flag = if bulk.is_confirmed() {
+        " (confirmed)"
+    } else {
+        ""
+    };
+    let text = format!("{}: {}{flag}", bulk.action(), bulk.ids().join(","));
+    html! { (DOCTYPE) html lang="en" { head { title { "Done" } } body { p id="result" { (text) } } } }
+}
+
 #[post("/people/actions")]
 async fn people_actions(body: String) -> Markup {
-    let bulk = BulkSelection::from_form(body.as_bytes()).expect("bulk body");
-    let text = format!("{}: {}", bulk.action(), bulk.ids().join(","));
-    html! { (DOCTYPE) html lang="en" { head { title { "Done" } } body { p id="result" { (text) } } } }
+    result(&body)
+}
+
+/// Each POST to the boosted action URL.
+static BOOSTED_POSTS: AtomicUsize = AtomicUsize::new(0);
+
+#[get("/people/boosted")]
+async fn people_boosted(
+    autumn_web::extract::Query(state): autumn_web::extract::Query<TableState>,
+) -> Markup {
+    // A sort is slow, so the test can see the busy state.
+    if state.sort().is_some() {
+        tokio::time::sleep(Duration::from_millis(800)).await;
+    }
+    layout(&boosted_table(&state))
+}
+
+#[post("/people/boosted/actions")]
+async fn people_boosted_actions(body: String) -> Markup {
+    BOOSTED_POSTS.fetch_add(1, Ordering::SeqCst);
+    result(&body)
 }
 
 async fn runner() -> SystemTestRunner {
@@ -107,7 +166,13 @@ async fn runner() -> SystemTestRunner {
     Box::pin(
         SystemTest::new()
             .state(state)
-            .routes(routes![people, people_fragment, people_actions])
+            .routes(routes![
+                people,
+                people_fragment,
+                people_actions,
+                people_boosted,
+                people_boosted_actions
+            ])
             .plugin_assets(&ASSETS)
             .build(),
     )
@@ -155,13 +220,13 @@ async fn open(page: &Page, path: &str) {
 
 /// `[checked, indeterminate, aria-checked]` of the select-all box, and the
 /// checked row ids, and the status text.
-const STATE_JS: &str = r#"(() => {
+const STATE_JS: &str = r"(() => {
   const all = document.getElementById('people-all');
   const rows = [...document.querySelectorAll('[data-autumn-datatable-row]')]
     .filter(c => c.checked).map(c => c.value);
   const status = document.getElementById('people-status').textContent.trim();
   return JSON.stringify([all.checked, all.indeterminate, all.getAttribute('aria-checked'), rows, status]);
-})()"#;
+})()";
 
 async fn state(page: &Page) -> String {
     eval::<String>(page, STATE_JS).await
@@ -313,7 +378,7 @@ async fn a_bulk_submit_with_no_row_stops_and_says_why() {
     open(&page, "/people").await;
     eval::<bool>(
         &page,
-        "(document.querySelector('#people-bulk [type=submit]').focus(), true)",
+        "(document.querySelector('#people [type=submit]').focus(), true)",
     )
     .await;
     page.press("Enter").await.expect("enter");
@@ -335,7 +400,7 @@ async fn a_confirm_action_opens_the_dialog_and_escape_cancels() {
         &page,
         "(() => { document.querySelector('[data-autumn-datatable-row][value=\"2\"]').click(); \
          document.getElementById('people-action').value = 'delete'; \
-         document.querySelector('#people-bulk [type=submit]').focus(); return true; })()",
+         document.querySelector('#people [type=submit]').focus(); return true; })()",
     )
     .await;
     page.press("Enter").await.expect("enter");
@@ -369,7 +434,7 @@ async fn a_confirm_action_opens_the_dialog_and_escape_cancels() {
     assert!(
         poll(
             &page,
-            "document.activeElement === document.querySelector('#people-bulk [type=submit]')"
+            "document.activeElement === document.querySelector('#people [type=submit]')"
         )
         .await,
         "focus did not go back to the submit button"
@@ -393,7 +458,7 @@ async fn a_confirm_action_opens_the_dialog_and_escape_cancels() {
     assert!(
         poll(
             &page,
-            "(document.getElementById('result') || {}).textContent === 'delete: 2'"
+            "(document.getElementById('result') || {}).textContent === 'delete: 2 (confirmed)'"
         )
         .await,
         "the form did not post"
@@ -414,7 +479,7 @@ async fn an_action_without_confirm_posts_at_once() {
     page.press(" ").await.expect("space");
     eval::<bool>(
         &page,
-        "(document.querySelector('#people-bulk [type=submit]').focus(), true)",
+        "(document.querySelector('#people [type=submit]').focus(), true)",
     )
     .await;
     page.press("Enter").await.expect("enter");
@@ -444,7 +509,7 @@ async fn select_all_works_with_javascript_off() {
     page.press(" ").await.expect("space");
     eval::<bool>(
         &page,
-        "(document.querySelector('#people-bulk [type=submit]').focus(), true)",
+        "(document.querySelector('#people [type=submit]').focus(), true)",
     )
     .await;
     page.press("Enter").await.expect("enter");
@@ -455,5 +520,113 @@ async fn select_all_works_with_javascript_off() {
         )
         .await,
         "select-all without JavaScript did not post the page ids"
+    );
+}
+
+// ── htmx: boost, busy state, sticky header ──────────────────────────────
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn hx_boost_does_not_skip_the_confirm_dialog() {
+    let runner = runner().await;
+    let page = runner.page().await.expect("page");
+    open(&page, "/people/boosted").await;
+    let before = BOOSTED_POSTS.load(Ordering::SeqCst);
+
+    // No row: htmx must not post.
+    eval::<bool>(
+        &page,
+        "(document.querySelector('#people [type=submit]').focus(), true)",
+    )
+    .await;
+    page.press("Enter").await.expect("enter");
+    assert!(
+        poll(&page, "document.getElementById('people-status').textContent.includes('Select at least one row.')").await
+    );
+
+    // A confirm action: the dialog opens and nothing posts.
+    eval::<bool>(
+        &page,
+        "(() => { document.querySelector('[data-autumn-datatable-row][value=\"2\"]').click(); \
+         document.getElementById('people-action').value = 'delete'; \
+         document.querySelector('#people [type=submit]').focus(); return true; })()",
+    )
+    .await;
+    page.press("Enter").await.expect("enter");
+    assert!(
+        poll(
+            &page,
+            "document.getElementById('people-confirm').open === true"
+        )
+        .await
+    );
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        BOOSTED_POSTS.load(Ordering::SeqCst),
+        before,
+        "htmx posted before the confirm"
+    );
+
+    // Confirm: one post, with the confirmed flag.
+    eval::<bool>(
+        &page,
+        "(document.querySelector('[data-autumn-datatable-ok]').click(), true)",
+    )
+    .await;
+    assert!(
+        poll(
+            &page,
+            "(document.getElementById('result') || {}).textContent === 'delete: 2 (confirmed)'"
+        )
+        .await,
+        "the boosted form did not post"
+    );
+    assert_eq!(BOOSTED_POSTS.load(Ordering::SeqCst), before + 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn an_htmx_request_from_the_table_sets_aria_busy_on_the_root() {
+    let runner = runner().await;
+    let page = runner.page().await.expect("page");
+    open(&page, "/people/boosted").await;
+    assert!(
+        !eval::<bool>(
+            &page,
+            "document.getElementById('people').hasAttribute('aria-busy')"
+        )
+        .await
+    );
+    eval::<bool>(
+        &page,
+        "(document.querySelector('.autumn-datatable-sort').click(), true)",
+    )
+    .await;
+    assert!(
+        poll(
+            &page,
+            "document.getElementById('people').getAttribute('aria-busy') === 'true'"
+        )
+        .await,
+        "no aria-busy during the request"
+    );
+    assert!(
+        poll(&page, "location.search.includes('sort=name') && !document.getElementById('people').hasAttribute('aria-busy')").await,
+        "aria-busy stays after the request"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Chromium"]
+async fn the_sticky_header_stays_at_the_top_of_the_scroll_region() {
+    let runner = runner().await;
+    let page = runner.page().await.expect("page");
+    open(&page, "/people/boosted").await;
+    assert!(
+        eval::<bool>(
+            &page,
+            "getComputedStyle(document.querySelector('#people thead th')).position === 'sticky'"
+        )
+        .await
     );
 }

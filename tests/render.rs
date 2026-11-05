@@ -153,6 +153,25 @@ fn a_bad_column_key_panics() {
 }
 
 #[test]
+#[should_panic(expected = "filter key")]
+fn a_filter_key_with_a_hyphen_panics() {
+    // Ids join their parts with `-`. A key with `-` can give two equal ids.
+    let _ = Filter::text("s-0", "S");
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "same key")]
+fn two_columns_with_one_key_panic_in_a_debug_build() {
+    let rows = posts();
+    let cols = vec![
+        Column::new("title", "Title", |p: &Post| html! { (p.title) }),
+        Column::new("title", "Again", |p: &Post| html! { (p.title) }),
+    ];
+    let _ = DataTable::new("posts", "Posts", &rows, &cols).render();
+}
+
+#[test]
 fn two_tables_have_distinct_ids() {
     let rows = posts();
     let cols = columns();
@@ -389,7 +408,9 @@ fn select_all_is_off_when_no_row_is_selected() {
 fn select_all_is_mixed_when_some_rows_are_selected() {
     let html = selectable_html(&["2"]);
     let all = element(&html, r#"id="posts-all""#);
-    assert!(all.contains(r#"aria-checked="mixed""#), "{all}");
+    // The script sets `indeterminate` and `aria-checked="mixed"` together.
+    // The server writes neither: the native box is not checked.
+    assert!(!all.contains("aria-checked"), "{all}");
     assert!(!all.contains(" checked"));
     assert!(html.contains(r#"value="2" aria-label="Select Beta" checked"#));
     assert!(html.contains("1 of 3 selected"));
@@ -444,26 +465,56 @@ fn bulk_html(actions: &[BulkAction<'_>]) -> String {
 }
 
 #[test]
-fn bulk_actions_wrap_the_table_in_a_post_form() {
+fn bulk_actions_add_a_post_form_that_the_controls_join() {
     let html = bulk_html(&[BulkAction::new("archive", "Archive")]);
     let form = element(&html, "<form id=\"posts-bulk\"");
     assert!(form.contains(r#"method="post""#), "{form}");
     assert!(form.contains(r#"action="/posts/actions""#));
-    assert!(html.contains(r#"<input type="hidden" name="csrf" value="tok">"#));
-    assert_eq!(count(&html, r#"<input type="hidden" name="visible""#), 3);
-    let form_start = html.find("<form id=\"posts-bulk\"").expect("form");
-    let table_start = html.find("<table").expect("table");
-    let form_end = html.rfind("</form>").expect("end");
-    assert!(form_start < table_start && table_start < form_end);
+    let start = html.find("<form id=\"posts-bulk\"").expect("form");
+    let end = start + html[start..].find("</form>").expect("end");
+    let body = &html[start..end];
+    assert!(body.contains(r#"<input type="hidden" name="csrf" value="tok">"#));
+    assert_eq!(count(body, r#"<input type="hidden" name="visible""#), 3);
+    // The form holds no cell. The controls join it with `form=`.
+    assert!(end < html.find("<table").expect("table"));
+    assert_eq!(
+        count(&html, r#"form="posts-bulk""#),
+        6,
+        "3 rows, select-all, select, button"
+    );
     assert!(
-        html.contains(r#"<select id="posts-action" name="action""#),
+        html.contains(r#"<select id="posts-action" name="action" form="posts-bulk">"#),
         "{html}"
     );
     assert!(html.contains(r#"<option value="archive">Archive</option>"#));
     assert!(html.contains(r#"<label for="posts-action">"#));
-    assert!(html.contains(r#"type="submit""#));
+    assert!(
+        html.contains(r#"form="posts-bulk">Apply action</button>"#),
+        "{html}"
+    );
     assert!(html.contains(r#"data-autumn-datatable-none="Select at least one row.""#));
     assert!(!html.contains("<dialog"));
+}
+
+#[test]
+fn a_form_in_a_cell_does_not_nest_in_the_bulk_form() {
+    let rows = posts();
+    let cols = vec![
+        Column::new("title", "Title", |p: &Post| html! { (p.title) }),
+        Column::new("delete", "Delete", |p: &Post| {
+            html! { form method="post" action={ "/posts/" (p.id) "/delete" } { button { "Delete" } } }
+        }),
+    ];
+    let actions = [BulkAction::new("archive", "Archive")];
+    let html = DataTable::new("posts", "Posts", &rows, &cols)
+        .selectable(|p| p.id.to_string())
+        .bulk_actions("/posts/actions", &actions, html! {})
+        .render()
+        .into_string();
+    let open = html.find("<form id=\"posts-bulk\"").expect("bulk form");
+    let close = open + html[open..].find("</form>").expect("end");
+    let cell_form = html.find(r#"action="/posts/1/delete""#).expect("cell form");
+    assert!(close < cell_form, "{html}");
 }
 
 #[test]
@@ -480,6 +531,8 @@ fn a_confirm_action_adds_the_dialog() {
     assert!(dialog.contains(r#"aria-labelledby="posts-confirm-title""#));
     assert!(html.contains("data-autumn-datatable-ok"));
     assert!(html.contains("data-autumn-datatable-cancel"));
+    assert!(dialog.contains(r#"aria-describedby="posts-confirm-text""#));
+    assert!(html.contains(r#"<p id="posts-confirm-text" data-autumn-datatable-confirm-text>"#));
     // The dialog is not in the form: its buttons do not submit it.
     assert!(html.find("<dialog").expect("dialog") > html.rfind("</form>").expect("form"));
 }
@@ -567,10 +620,39 @@ fn active_filters_show_as_chips_that_remove_one_value() {
         "{html}"
     );
     assert!(html.contains(
-        r#"href="/posts?q=hi&amp;filter[status]=open&amp;sort=title&amp;dir=asc" aria-label="Remove filter Status: Closed""#
+        r#"href="/posts?q=hi&amp;filter[status]=open&amp;sort=title&amp;dir=asc" aria-label="Status: Closed, remove""#
     ), "{html}");
-    assert!(html.contains(r#"aria-label="Remove search hi""#));
+    assert!(html.contains(r#"aria-label="Search: hi, remove""#));
     assert!(html.contains(r#"<a class="autumn-datatable-clear" href="/posts?sort=title&amp;dir=asc">Clear filters</a>"#));
+}
+
+#[test]
+fn the_filter_bar_keeps_the_search_when_it_has_no_search_box() {
+    let rows = posts();
+    let cols = columns();
+    let filters = filters();
+    let st = state("q=hi&page=3");
+    let html = DataTable::new("posts", "Posts", &rows, &cols)
+        .state(&st)
+        .filters(&filters)
+        .render()
+        .into_string();
+    assert!(
+        html.contains(r#"<input type="hidden" name="q" value="hi">"#),
+        "{html}"
+    );
+    // With no base path, a link to the empty state is `?`, not `""`.
+    assert!(
+        html.contains(r#"<a class="autumn-datatable-clear" href="?">Clear filters</a>"#),
+        "{html}"
+    );
+}
+
+#[test]
+fn the_buttons_have_distinct_names() {
+    let html = filter_html("");
+    assert!(html.contains(">Apply filters</button>"));
+    assert!(html.contains(">Show columns</button>"));
 }
 
 #[test]
@@ -601,6 +683,18 @@ fn an_empty_table_shows_the_empty_state() {
     assert!(html.contains(r#"<a href="/posts/new">New post</a>"#));
     let all = element(&html, r#"id="posts-all""#);
     assert!(all.contains("disabled"), "{all}");
+}
+
+#[test]
+fn the_app_sets_the_empty_state_heading_level() {
+    let rows: Vec<Post> = Vec::new();
+    let cols = columns();
+    let html = DataTable::new("posts", "Posts", &rows, &cols)
+        .empty_level(autumn_datatable_plugin::HeadingLevel::H3)
+        .render()
+        .into_string();
+    assert!(html.contains("<h3"), "{html}");
+    assert!(!html.contains("<h2"));
 }
 
 #[test]
@@ -656,4 +750,83 @@ fn state_values_are_escaped_in_markup_and_links() {
     assert!(!html.contains("<b>"));
     assert!(html.contains("&quot;&gt;&lt;script&gt;x"));
     assert!(html.contains("q=%22%3E%3Cscript%3Ex"));
+}
+
+// ── Form fields decode to the next state ────────────────────────────────
+
+/// The `name=value` pairs that a GET form sends: hidden and text inputs,
+/// checked boxes, and the selected option of each select.
+fn form_query(html: &str, form_open: &str) -> String {
+    let start = html
+        .find(form_open)
+        .unwrap_or_else(|| panic!("no {form_open}"));
+    let form = &html[start..start + html[start..].find("</form>").expect("end")];
+    let attr = |tag: &str, name: &str| -> Option<String> {
+        let key = format!(" {name}=\"");
+        tag.find(&key).map(|at| {
+            let rest = &tag[at + key.len()..];
+            rest[..rest.find('"').expect("quote")]
+                .replace("&quot;", "\"")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+        })
+    };
+    let encode = |v: &str| {
+        v.replace('%', "%25")
+            .replace('&', "%26")
+            .replace('+', "%2B")
+            .replace(' ', "+")
+    };
+    let mut pairs = Vec::new();
+    for tag in form.split('<').filter(|t| t.starts_with("input ")) {
+        let kind = attr(tag, "type").unwrap_or_default();
+        if kind == "checkbox" && !tag.contains(" checked") {
+            continue;
+        }
+        if let (Some(name), Some(value)) = (attr(tag, "name"), attr(tag, "value")) {
+            pairs.push(format!("{name}={}", encode(&value)));
+        }
+    }
+    for select in form.split("<select ").skip(1) {
+        let name = attr(&format!(" {select}"), "name").expect("select name");
+        let body = &select[..select.find("</select>").expect("end")];
+        let chosen = body
+            .split("<option ")
+            .skip(1)
+            .find(|o| o.contains(" selected"))
+            .and_then(|o| attr(&format!(" {o}"), "value"))
+            .unwrap_or_default();
+        pairs.push(format!("{name}={}", encode(&chosen)));
+    }
+    pairs.join("&")
+}
+
+#[test]
+fn the_filter_bar_sends_the_state_back_on_page_one() {
+    let query = "q=a%20b&filter[status]=closed&filter[status]=open&filter[kind]=idea\
+                 &filter[author]=ann&cols=status&sort=title&dir=desc&page=4&size=50&density=compact";
+    let html = filter_html(query);
+    let sent = form_query(&html, r#"<form id="posts-filters""#);
+    let back = TableState::from_query(&sent).expect("decodes");
+    // The form sends the boxes in option order: open, then closed.
+    let expected = state(query)
+        .with_filter("status", ["open", "closed"])
+        .with_page(1);
+    assert_eq!(back, expected, "sent: {sent}");
+}
+
+#[test]
+fn the_column_picker_sends_the_state_back() {
+    let query = "q=x&filter[status]=open&cols=status&sort=title&page=2&density=compact";
+    let html = filter_html(query);
+    let sent = form_query(&html, r#"<details class="autumn-datatable-columns">"#);
+    let back = TableState::from_query(&sent).expect("decodes");
+    assert_eq!(back, state(query), "sent: {sent}");
+    // With each box clear, the marker still sends `cols`.
+    let none = sent.replace("&cols=status", "");
+    assert_eq!(
+        TableState::from_query(&none).expect("decodes").columns(),
+        Some(&[][..])
+    );
 }
