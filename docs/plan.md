@@ -80,3 +80,9 @@ stays the light, sort-only table.
    `run_widget_browser_conformance`.
 4. REFACTOR: clean up with all tests green. Docs and CI.
 5. Review from several angles. Fix the findings.
+
+## Decision after the plan
+
+The admin plugin keeps its own table. This crate is in its own
+repository. If the admin used it, each `autumn-web` release must first
+release this crate. The admin migration is not part of this work.

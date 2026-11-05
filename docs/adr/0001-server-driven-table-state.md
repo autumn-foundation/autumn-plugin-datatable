@@ -54,7 +54,9 @@ Option 3.
 - The script is small. It only syncs the select-all state, the count and
   the confirm dialog.
 - A long filter set makes a long URL.
-- The admin URL format changes from `filter.<key>` to `filter[<key>]`
-  when the admin moves to this table.
+- The admin plugin keeps its own table. It does not use this crate. A
+  plugin that uses a plugin from another repository must wait for that
+  plugin at each `autumn-web` release. The admin keeps its
+  `filter.<key>` format.
 - `list_query` has only the single-value filters. The app applies a
   multi-value filter with `eq_any`.
